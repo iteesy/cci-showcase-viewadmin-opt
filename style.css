@@ -1,0 +1,59 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: black;
+  font-family: 'Arial', sans-serif;
+}
+
+canvas {
+    position: fixed;
+    top: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    z-index: 100;
+}
+
+/* Set opacity only for human view canvas */
+html[data-view="human"] canvas,
+body[data-view="human"] canvas {
+    opacity: 0.6;
+}
+
+/* Hide video element in administrative view */
+html[data-view="administrative"] #video-element,
+body[data-view="administrative"] #video-element {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.video-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    z-index: 1;
+}
+        
+#video-element {
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+}
+
+#vhs-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Ensures video covers full screen */
+    z-index: 9999; /* Above the p5.js canvas */
+    pointer-events: none; /* Let clicks pass through */
+    opacity: 0.85; /* Adjust transparency */
+    mix-blend-mode: color-dodge; /* Try: multiply, screen, soft-light */
+    
+}
