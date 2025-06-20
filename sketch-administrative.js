@@ -14,12 +14,16 @@ let faceMesh;
 let poses = [];
 let faces = [];
 
+// PERFORMANCE TRACKING VARIABLES
+let lastBodyDetection = 0;
+let lastFaceDetection = 0;
+
 // Form field images
 let fieldImages = {};
 
 // Cycling animation
 let fieldCycleTimer = 0;
-let fieldCycleSpeed = 500; 
+let fieldCycleSpeed = 800; // REDUCED from 500 for performance
 let currentTopFieldIndex = 0;
 
 //FACE FIELDS ONLY
@@ -28,26 +32,25 @@ let allFaceFieldsFlat = [];
 // FACE MESH FIELDS - Using facial landmarks for precise positioning
 let faceLayeredFields = {
     identity: {
-        // Core identity spread across forehead and key face areas
-        "forehead_center": "identity_ssn_med.png",      // Landmark ~10 (forehead center)
-        "forehead_left": "identity_anum_med.png",       // Landmark ~67 (left forehead)
-        "forehead_right": "identity_gender_med.png",    // Landmark ~297 (right forehead)
-        "temple_left": "identity_dob_small.png",        // Landmark ~21 (left temple)
-        "temple_right": "identity_uscis_status_small.png", // Landmark ~251 (right temple)
-        "eyebrow_center": "identity_ctry_citizenship_small.png" // Landmark ~9 (between eyebrows)
+        "forehead_center": "identity_ssn_med.png",
+        "forehead_left": "identity_anum_med.png",
+        "forehead_right": "identity_gender_med.png",
+        "temple_left": "identity_dob_small.png",
+        "temple_right": "identity_uscis_status_small.png",
+        "eyebrow_center": "identity_ctry_citizenship_small.png"
     },
     physical: {
-        "cheek_left": "physical_eye_small.png",         // Landmark ~116 (left cheek)
-        "cheek_right": "physical_hair_small.png",       // Landmark ~345 (right cheek)
-        "jaw_left": "physical_weight_small.png",        // Landmark ~172 (left jaw)
-        "jaw_right": "physical_height_small.png",       // Landmark ~397 (right jaw)
-        "chin": null // Available slot
+        "cheek_left": "physical_eye_small.png",
+        "cheek_right": "physical_hair_small.png",
+        "jaw_left": "physical_weight_small.png",
+        "jaw_right": "physical_height_small.png",
+        "chin": null
     },
     demographics: {
-        "nose_tip": "demographics_marital_status_med.png", // Landmark ~1 (nose tip)
-        "mouth_left": "demographics_ethnicity_radio.png",   // Landmark ~61 (mouth left)
-        "mouth_right": "demographics_race_checkbox.png",    // Landmark ~291 (mouth right)
-        "lip_bottom": "demographics_income_radio.png"       // Landmark ~18 (bottom lip)
+        "nose_tip": "demographics_marital_status_med.png",
+        "mouth_left": "demographics_ethnicity_radio.png",
+        "mouth_right": "demographics_race_checkbox.png",
+        "lip_bottom": "demographics_income_radio.png"
     }
 };
 
@@ -63,51 +66,45 @@ let faceLandmarkMap = {
     "jaw_left": 172,
     "jaw_right": 397,
     "nose_tip": 1,
-    "eyebrow_center": 9,  // Between eyebrows landmark
+    "eyebrow_center": 9,
     "mouth_left": 61,
     "mouth_right": 291,
     "lip_bottom": 18
 };
 
 //BODY FIELDS - Using body keypoints for positioning
-let allBodyFieldsFlat = []; // Array of all body field filenames for random cycling
+let allBodyFieldsFlat = [];
 let bodyFieldCycleTimer = 0;
-let bodyFieldCycleSpeed = 1000; // if you change speed ONLY on body
+let bodyFieldCycleSpeed = 1500; // INCREASED from 1000 for performance
 let currentTopBodyFieldIndex = 0;
 
-// BODY FIELDS BOUNCE ANIMATION - DVD Screensaver style within body area  
+// REDUCED BOUNCING FIELDS - Cut in half for performance
 let bouncingFieldImages = [
-    // Original body keypoint fields (now bouncing instead of fixed)
-    "family_father_med.png",           // Was left_shoulder
-    "family_mother_med.png",           // Was right_shoulder  
-    "family_spouse_med.png",           // Was left_elbow
-    "family_spouse_birthplace_med.png", // Was right_elbow
-    "family_children_name_med.png",    // Was left_wrist
-    "identity_birthplace_med.png",     // Was right_wrist
-    "work_occupation_med.png",         // Was left_hip
-    "work_employer_med.png",           // Was right_hip
-    "contact_address_med.png",         // Was left_knee
-    "contact_phone_med.png",           // Was right_knee
-    "travel_doc_med.png",              // Was left_ankle
-    "travel_visa_med.png",             // Was right_ankle
+    // Core family fields
+    "family_father_med.png",
+    "family_mother_med.png",
+    "family_spouse_med.png",
+    "family_children_name_med.png",
+    "identity_birthplace_med.png",
     
-    // Additional bouncing fields
+    // Core work/contact fields
+    "work_occupation_med.png",
+    "work_employer_med.png",
+    "contact_address_med.png",
+    "contact_phone_med.png",
+    
+    // Core travel fields
+    "travel_doc_med.png",
+    "travel_visa_med.png",
+    
+    // Essential additional fields only
     "family_children_dob_med.png",
     "family_spouse_citizenship_med.png",
-    "family_spouse_cntry_citizenship_med.png", 
-    "family_spouse_employer_med.png",
-    "family_spouse_job_med.png",
-    "family_spouse_marriage_med.png",
-    // REMOVED: "family_spouse_status_med.png", (duplicate of demographics_marital_status_med.png)
-    "family_children_address_med.png",
-    "family_children_amt_small.png",
-    "family_children_birthplace_med.png",
-    "family_children_citizenship_med.png",
-    "family_children_cntry_citizenship_med.png",
-    "legal_employer_med.png",          
+    "legal_employer_med.png",
     "travel_cntry_med.png",
-    "travel_instates_med.png",
     "identity_anum_med.png",
+    
+    // Reduced questions (only first 8 instead of 17)
     "questions_1_radio.png",
     "questions_2_radio.png",
     "questions_3_radio.png",
@@ -115,16 +112,7 @@ let bouncingFieldImages = [
     "questions_5_radio.png",
     "questions_6_radio.png",
     "questions_7_radio.png",
-    "questions_8_radio.png",
-    "questions_9_radio.png",
-    "questions_10_radio.png",
-    "questions_11_radio.png",
-    "questions_12_radio.png",
-    "questions_13_radio.png",
-    "questions_14_radio.png",
-    "questions_15_radio.png",
-    "questions_16_radio.png",
-    "questions_17_radio.png"
+    "questions_8_radio.png"
 ];
 
 // Bouncing field objects
@@ -173,8 +161,8 @@ function loadFormFieldImages() {
 }
 
 function setup() {
-    // Full screen canvas
     createCanvas(windowWidth, windowHeight);
+    //frameRate(45); // REDUCED from default 60fps
     
     // Initialize webcam
     capture = createCapture(VIDEO);
@@ -191,15 +179,13 @@ function setup() {
     initializeBodyFieldCycling();
 }
 
-// Create flat array of all individual face fields
 function initializeFieldCycling() {
     allFaceFieldsFlat = [];
     
-    // Flatten all face fields into a single array for cycling
     for (let layerName in faceLayeredFields) {
         for (let landmarkName in faceLayeredFields[layerName]) {
             let filename = faceLayeredFields[layerName][landmarkName];
-            if (filename && fieldImages[filename]) { // Only add if file exists
+            if (filename && fieldImages[filename]) {
                 allFaceFieldsFlat.push({
                     layer: layerName,
                     landmark: landmarkName,
@@ -214,37 +200,42 @@ function initializeFieldCycling() {
 }
 
 function initializeBodyFieldCycling() {
-    allBodyFieldsFlat = [...bouncingFieldImages]; // Copy all bouncing field filenames
+    allBodyFieldsFlat = [...bouncingFieldImages];
     console.log(`Initialized body field cycling with ${allBodyFieldsFlat.length} fields`);
 }
 
 function initializeBouncingFields() {
     bouncingFields = [];
     
-    // Create bouncing field objects with ORGANIC pre-distribution
     for (let i = 0; i < bouncingFieldImages.length; i++) {
         let filename = bouncingFieldImages[i];
         bouncingFields.push({
             filename: filename,
-            // Pre-distribute in expected body area (center 60% of screen)
-            x: random(windowWidth * 0.2, windowWidth * 0.8),    // Expected body width
-            y: random(windowHeight * 0.15, windowHeight * 0.85), // Expected body height (head to legs)
-            vx: random(-2, 2),
-            vy: random(-2, 2),
-            minSpeed: 0.5,
-            maxSpeed: 2
+            x: random(windowWidth * 0.2, windowWidth * 0.8),
+            y: random(windowHeight * 0.15, windowHeight * 0.85),
+            vx: random(-1.5, 1.5), // REDUCED speed for performance
+            vy: random(-1.5, 1.5),
+            minSpeed: 0.3, // REDUCED minimum speed
+            maxSpeed: 1.5  // REDUCED maximum speed
         });
     }
     
     console.log(`Initialized ${bouncingFields.length} bouncing fields in organic distribution`);
 }
 
+// PERFORMANCE OPTIMIZATION: Limit detection frequency
 function gotPoses(results) {
-    poses = results;
+    if (frameCount - lastBodyDetection > 8) { // Every 8 frames instead of every frame
+        poses = results;
+        lastBodyDetection = frameCount;
+    }
 }
 
 function gotFaces(results) {
-    faces = results;
+    if (frameCount - lastFaceDetection > 12) { // Every 12 frames instead of every frame
+        faces = results;
+        lastFaceDetection = frameCount;
+    }
 }
 
 function windowResized() {
@@ -265,15 +256,15 @@ function draw() {
     }
     
     if (isIdleState) {
+        // Draw idle screen
         drawIdleScreen();
     } else {
+        // Draw administrative side (no coordinate translation needed in 2D mode)
         drawAdministrativeSide();
     }
 }
 
 function drawIdleScreen() {
-
-    
     // Update queue number periodically (every 8-12 seconds)
     if (millis() - lastQueueUpdate > random(8000, 12000)) {
         currentQueueNumber += floor(random(1, 4));
@@ -299,17 +290,16 @@ function drawIdleScreen() {
     fill(102, 102, 102);
     textAlign(CENTER, CENTER);
     textSize(queueTextSize);
-textFont('Helvetica');
+    textFont('Helvetica');
     text(`NOW SERVING: APPLICANT #${currentQueueNumber.toString().padStart(3, '0')}`, 
          width/2, topSpacing);
     
-    // Main instruction (H1 equivalent) - handle text wrapping for narrow screens
+    // Main instruction (H1 equivalent)
     fill(26, 26, 26);
     textSize(mainTextSize);
     textStyle(BOLD);
     
     if (isPortrait && width < height * 0.7) {
-        // Split text for very narrow portraits
         text("PLEASE STEP HERE", width/2, centerY - mainTextSize * 1.2);
         text("FOR ID PHOTO", width/2, centerY - mainTextSize * 0.3);
     } else {
@@ -319,7 +309,7 @@ textFont('Helvetica');
     // Crosshair/viewfinder
     drawCrosshair();
     
-    // Instructions (H3 equivalent)
+    // Instructions
     fill(68, 68, 68);
     textSize(instructionTextSize);
     textStyle(NORMAL);
@@ -330,7 +320,7 @@ textFont('Helvetica');
     text("STAND ON DESIGNATED AREA", width/2, instructionY1);
     
     // Blinking indicator for camera instruction
-    let blinkOn = (millis() % 1500) < 750; // Blink every 1.5 seconds
+    let blinkOn = (millis() % 1500) < 750;
     let cameraText = "LOOK DIRECTLY INTO CAMERA";
     text(cameraText, width/2 - instructionTextSize * 0.4, instructionY2);
     
@@ -339,28 +329,24 @@ textFont('Helvetica');
         let dotSize = instructionTextSize * 0.4;
         ellipse(width/2 + textWidth(cameraText)/2, instructionY2, dotSize, dotSize);
     }
-    
 }
 
 function drawCrosshair() {
-    if (!crosshairImg) return; // Safety check
+    if (!crosshairImg) return;
     
     push();
     translate(width/2, height/2 + height * 0.05);
     
-    // Responsive sizing
     let baseSize = min(width, height);
-    let crosshairSize = baseSize * 0.25; // 25% of smaller dimension
+    let crosshairSize = baseSize * 0.25;
     
-    // Pulsing animation
     crosshairPulse += 0.02;
     let pulseScale = 1 + sin(crosshairPulse) * 0.05;
     scale(pulseScale);
     
-    // Draw crosshair image centered
     imageMode(CENTER);
     image(crosshairImg, 0, 0, crosshairSize, crosshairSize);
-    imageMode(CORNER); // Reset to default
+    imageMode(CORNER);
     
     pop();
 }
@@ -370,8 +356,8 @@ function drawAdministrativeSide() {
     if (capture.loadedmetadata) {
         image(capture, 0, 0, windowWidth, windowHeight);
         
-        // Apply visual effects
-        filter(BLUR, 8);
+        // REDUCED blur for performance
+        filter(BLUR, 4); // REDUCED from 8
         
         noTint();
     }
@@ -379,10 +365,9 @@ function drawAdministrativeSide() {
     // Draw bouncing body fields
     drawBouncingFields();
     
-    // Draw layered face fields (FaceMesh - static positioning)
+    // Draw layered face fields
     drawFaceMeshLayeredFields();
     
-    // Optional: Draw skeleton for debugging
     if (showSkeleton) {
         drawSkeleton();
     }
@@ -391,7 +376,7 @@ function drawAdministrativeSide() {
 function drawBouncingFields() {
     if (poses.length === 0) return;
 
-    // RANDOM BODY FIELD CYCLING LOGIC
+    // SLOWER body field cycling for performance
     if (millis() - bodyFieldCycleTimer > bodyFieldCycleSpeed) {
         currentTopBodyFieldIndex = Math.floor(random(allBodyFieldsFlat.length));
         bodyFieldCycleTimer = millis();
@@ -399,23 +384,20 @@ function drawBouncingFields() {
     }
 
     let topBodyField = allBodyFieldsFlat[currentTopBodyFieldIndex];
-    
     let pose = poses[0];
-    
-    // Get body bounds for constraining bouncing fields
     let bodyBounds = getBodyBounds(pose);
     if (!bodyBounds) return;
     
-    // FIRST PASS: Draw all fields EXCEPT the top one, and update positions
+    // Update and draw bouncing fields
     for (let field of bouncingFields) {
-        // Update position - simple bouncing movement
+        // Update position
         field.x += field.vx;
         field.y += field.vy;
         
         let fieldImg = fieldImages[field.filename];
         if (!fieldImg) continue;
         
-        // Bounce off body boundaries (DVD screensaver style)
+        // Bounce off boundaries
         if (field.x <= bodyBounds.minX || field.x + fieldImg.width >= bodyBounds.maxX) {
             field.vx *= -1;
             field.x = constrain(field.x, bodyBounds.minX, bodyBounds.maxX - fieldImg.width);
@@ -425,29 +407,26 @@ function drawBouncingFields() {
             field.y = constrain(field.y, bodyBounds.minY, bodyBounds.maxY - fieldImg.height);
         }
         
-        // Ensure minimum speed (prevent getting stuck)
+        // Maintain speed
         if (abs(field.vx) < field.minSpeed) field.vx = field.vx > 0 ? field.minSpeed : -field.minSpeed;
         if (abs(field.vy) < field.minSpeed) field.vy = field.vy > 0 ? field.minSpeed : -field.minSpeed;
-        
-        // Cap maximum speed
         field.vx = constrain(field.vx, -field.maxSpeed, field.maxSpeed);
         field.vy = constrain(field.vy, -field.maxSpeed, field.maxSpeed);
         
-        // Draw the field ONLY if it's not the top field (no scaling)
+        // Draw field (top field drawn last for layering)
         if (field.filename !== topBodyField) {
             image(fieldImg, field.x, field.y);
         }
     }
     
-    // SECOND PASS: Draw the top field last (so it appears on top)
+    // Draw top field last
     for (let field of bouncingFields) {
         if (field.filename === topBodyField) {
             let fieldImg = fieldImages[field.filename];
             if (fieldImg) {
-                // Draw top field at original size (no scaling for consistency)
                 image(fieldImg, field.x, field.y);
             }
-            break; // Only draw the first match
+            break;
         }
     }
 }
@@ -456,18 +435,16 @@ function getBodyBounds(pose) {
     let validKeypoints = pose.keypoints.filter(kp => kp.confidence > 0.3);
     if (validKeypoints.length === 0) return null;
     
-    // Scale keypoints to canvas size and find bounds
     let scaledKeypoints = validKeypoints.map(kp => ({
         x: map(kp.x, 0, capture.width, 0, windowWidth),
         y: map(kp.y, 0, capture.height, 0, windowHeight)
     }));
     
-    let minX = Math.min(...scaledKeypoints.map(kp => kp.x)) - 50; // Add padding
+    let minX = Math.min(...scaledKeypoints.map(kp => kp.x)) - 50;
     let maxX = Math.max(...scaledKeypoints.map(kp => kp.x)) + 50;
     let minY = Math.min(...scaledKeypoints.map(kp => kp.y)) - 50;
     let maxY = Math.max(...scaledKeypoints.map(kp => kp.y)) + 50;
     
-    // Ensure bounds stay within canvas
     return {
         minX: Math.max(0, minX),
         maxX: Math.min(windowWidth, maxX),
@@ -479,9 +456,9 @@ function getBodyBounds(pose) {
 function drawFaceMeshLayeredFields() {
     if (faces.length === 0 || allFaceFieldsFlat.length === 0) return;
     
-    let face = faces[0]; // Use first detected face
+    let face = faces[0];
     
-    // INDIVIDUAL FIELD CYCLING LOGIC - which specific field should be drawn on top
+    // SLOWER face field cycling for performance
     if (millis() - fieldCycleTimer > fieldCycleSpeed) {
         currentTopFieldIndex = (currentTopFieldIndex + 1) % allFaceFieldsFlat.length;
         fieldCycleTimer = millis();
@@ -489,14 +466,11 @@ function drawFaceMeshLayeredFields() {
         console.log(`Field cycle: ${currentField.displayName} now on top`);
     }
     
-    // Get the current top field
     let topField = allFaceFieldsFlat[currentTopFieldIndex];
-    
-    // Draw ALL fields first (in normal order)
     let layers = ['demographics', 'physical', 'identity'];
     
+    // Draw all fields except top field
     for (let layer of layers) {
-        // Define drawing order within each layer
         let drawingOrder;
         if (layer === 'identity') {
             drawingOrder = ['temple_left', 'eyebrow_center', 'forehead_left', 'forehead_right', 'temple_right', 'forehead_center'];
@@ -509,57 +483,44 @@ function drawFaceMeshLayeredFields() {
         for (let landmarkName of drawingOrder) {
             let imageFilename = faceLayeredFields[layer][landmarkName];
             if (imageFilename && fieldImages[imageFilename]) {
-                
-                // Skip drawing the top field here - we'll draw it last
                 if (layer === topField.layer && landmarkName === topField.landmark) {
-                    continue; // Skip this field, draw it on top later
+                    continue;
                 }
-                
                 drawSingleFaceField(face, layer, landmarkName, imageFilename, false);
             }
         }
     }
     
-    // NOW draw the top field last (so it appears on top)
+    // Draw top field last
     drawSingleFaceField(face, topField.layer, topField.landmark, topField.filename, true);
 }
 
-// Helper function to draw a single face field
 function drawSingleFaceField(face, layer, landmarkName, imageFilename, isTopField) {
     let landmarkIndex = faceLandmarkMap[landmarkName];
     if (landmarkIndex === undefined || !face.keypoints[landmarkIndex]) return;
     
     let landmark = face.keypoints[landmarkIndex];
-    
-    // Direct coordinate scaling
     let x = landmark.x * (windowWidth / capture.width);
     let y = landmark.y * (windowHeight / capture.height);
     
-    // Layer offset for visibility
     let layerOffsetX = layer === 'physical' ? 10 : (layer === 'demographics' ? 20 : 0);
     let layerOffsetY = layer === 'physical' ? 5 : (layer === 'demographics' ? 10 : 0);
     
-    // Apply offset positioning
     let offsetX = x + layerOffsetX;
     let offsetY = y + layerOffsetY;
     
-    // SPECIAL CASE: Move SSN to top of head (above forehead)
     if (imageFilename === "identity_ssn_med.png") {
         offsetY = offsetY - 80;
     }
     
-    // Get field image at native size (no scaling!)
     let fieldImg = fieldImages[imageFilename];
     
-    // Center the field on the landmark
     offsetX = offsetX - (fieldImg.width / 2) + layerOffsetX;
     offsetY = offsetY - (fieldImg.height / 2) + layerOffsetY;
     
-    // Ensure fields stay within canvas bounds
     offsetX = constrain(offsetX, 0, windowWidth - fieldImg.width);
     offsetY = constrain(offsetY, 0, windowHeight - fieldImg.height);
     
-    // Draw the form field image at native size
     image(fieldImg, offsetX, offsetY);
 }
 
@@ -567,8 +528,6 @@ function drawSkeleton() {
     if (poses.length === 0) return;
     
     let pose = poses[0];
-    
-    // Define skeleton connections
     let connections = [
         ['left_shoulder', 'right_shoulder'],
         ['left_shoulder', 'left_elbow'],
@@ -602,10 +561,9 @@ function drawSkeleton() {
     }
 }
 
-function keyPressed() {
-    if (key === 's' || key === 'S') {
-        // Toggle skeleton drawing for debugging
-        showSkeleton = !showSkeleton;
-        console.log('Skeleton view:', showSkeleton ? 'ON' : 'OFF');
-    }
-}
+// function keyPressed() {
+//     if (key === 's' || key === 'S') {
+//         showSkeleton = !showSkeleton;
+//         console.log('Skeleton view:', showSkeleton ? 'ON' : 'OFF');
+//     }
+// }
