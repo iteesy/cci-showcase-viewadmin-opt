@@ -1,3 +1,12 @@
+let isIdleState = true;
+let lastPersonDetectedTime = 0;
+let idleTimeout = 3000; // 3 seconds with no person detected = idle state
+let currentQueueNumber = 301;
+let lastQueueUpdate = 0;
+let crosshairImg;
+let crosshairPulse = 0;
+let blinkTimer = 0;
+
 let capture;
 // Hybrid system: BodyPose for body + FaceMesh for face
 let bodyPose;
@@ -8,11 +17,13 @@ let faces = [];
 // Form field images
 let fieldImages = {};
 
-// Layer cycling animation variables
+// Cycling animation
 let fieldCycleTimer = 0;
 let fieldCycleSpeed = 500; 
 let currentTopFieldIndex = 0;
-let allFaceFieldsFlat = []; // Will be populated in setup()
+
+//FACE FIELDS ONLY
+let allFaceFieldsFlat = []; 
 
 // FACE MESH FIELDS - Using facial landmarks for precise positioning
 let faceLayeredFields = {
@@ -58,34 +69,13 @@ let faceLandmarkMap = {
     "lip_bottom": 18
 };
 
+//BODY FIELDS - Using body keypoints for positioning
 let allBodyFieldsFlat = []; // Array of all body field filenames for random cycling
 let bodyFieldCycleTimer = 0;
-let bodyFieldCycleSpeed = 1000; // Could be different from face fields
+let bodyFieldCycleSpeed = 1000; // if you change speed ONLY on body
 let currentTopBodyFieldIndex = 0;
 
-// FIXED KEYPOINT FIELDS (Non-face areas)
-let keypointImageMap = {
-    // Upper body - Family clusters
-    "left_shoulder": "family_father_med.png",
-    "right_shoulder": "family_mother_med.png",
-    "left_elbow": "family_spouse_med.png",
-    "right_elbow": "family_spouse_birthplace_med.png",
-    "left_wrist": "family_children_name_med.png",
-    // Also need to add birthplace back to the mix
-    "right_wrist": "identity_birthplace_med.png",
-    
-    // Core/Hip area - Work & Contact
-    "left_hip": "work_occupation_med.png",
-    "right_hip": "work_employer_med.png",
-    
-    // Lower body - Contact & Travel  
-    "left_knee": "contact_address_med.png",
-    "right_knee": "contact_phone_med.png",
-    "left_ankle": "travel_doc_med.png",
-    "right_ankle": "travel_visa_med.png"
-};
-
-// ALL BODY FIELDS NOW BOUNCING - DVD Screensaver style within body area  
+// BODY FIELDS BOUNCE ANIMATION - DVD Screensaver style within body area  
 let bouncingFieldImages = [
     // Original body keypoint fields (now bouncing instead of fixed)
     "family_father_med.png",           // Was left_shoulder
@@ -108,13 +98,13 @@ let bouncingFieldImages = [
     "family_spouse_employer_med.png",
     "family_spouse_job_med.png",
     "family_spouse_marriage_med.png",
-    "family_spouse_status_med.png",
+    // REMOVED: "family_spouse_status_med.png", (duplicate of demographics_marital_status_med.png)
     "family_children_address_med.png",
     "family_children_amt_small.png",
     "family_children_birthplace_med.png",
     "family_children_citizenship_med.png",
     "family_children_cntry_citizenship_med.png",
-    "legal_employer_med.png",          // Kept the main legal employer file
+    "legal_employer_med.png",          
     "travel_cntry_med.png",
     "travel_instates_med.png",
     "identity_anum_med.png",
@@ -137,23 +127,13 @@ let bouncingFieldImages = [
     "questions_17_radio.png"
 ];
 
-// Simple bouncing fields - back to original working system
-
 // Bouncing field objects
 let bouncingFields = [];
 
-// Gallery variables
-let galleryPhotos = [];
-let maxGalleryPhotos = 20;
-let galleryUpdateInterval = 2000;
 let showSkeleton = false;
 
-// URL parameter detection for view mode
-const urlParams = new URLSearchParams(window.location.search);
-const viewMode = urlParams.get('view') || 'administrative'; // Default to administrative
-
 function preload() {
-    // Load BodyPose and FaceMesh for administrative view
+    // Load BodyPose and FaceMesh
     bodyPose = ml5.bodyPose('MoveNet', {
         modelType: 'SINGLEPOSE_LIGHTNING'
     });
@@ -163,6 +143,9 @@ function preload() {
         refineLandmarks: false,
         flipHorizontal: false
     });
+
+    // Load crosshair image
+    crosshairImg = loadImage('photos/crosshairs.png');
 
     // Load all form field images
     loadFormFieldImages();
@@ -176,14 +159,6 @@ function loadFormFieldImages() {
             if (filename && !fieldImages[filename]) {
                 fieldImages[filename] = loadImage(`photos/form_fields/${filename}`);
             }
-        }
-    }
-    
-    // Load fixed keypoint fields
-    for (let keypoint in keypointImageMap) {
-        let filename = keypointImageMap[keypoint];
-        if (filename && !fieldImages[filename]) {
-            fieldImages[filename] = loadImage(`photos/form_fields/${filename}`);
         }
     }
     
@@ -210,18 +185,10 @@ function setup() {
     bodyPose.detectStart(capture, gotPoses);
     faceMesh.detectStart(capture, gotFaces);
     
-    // Initialize bouncing fields
+    // Initialize bouncing fields and field cycling
     initializeBouncingFields();
-    
-    // Initialize field cycling for both face and body
     initializeFieldCycling();
     initializeBodyFieldCycling();
-    
-    // Initialize gallery wall if in gallery mode
-    if (viewMode === 'gallery') {
-        loadGalleryPhotos();
-        setInterval(loadGalleryPhotos, galleryUpdateInterval);
-    }
 }
 
 // Create flat array of all individual face fields
@@ -259,7 +226,7 @@ function initializeBouncingFields() {
         let filename = bouncingFieldImages[i];
         bouncingFields.push({
             filename: filename,
-            // 🌱 ORGANIC APPROACH: Pre-distribute in expected body area (center 60% of screen)
+            // Pre-distribute in expected body area (center 60% of screen)
             x: random(windowWidth * 0.2, windowWidth * 0.8),    // Expected body width
             y: random(windowHeight * 0.15, windowHeight * 0.85), // Expected body height (head to legs)
             vx: random(-2, 2),
@@ -271,8 +238,6 @@ function initializeBouncingFields() {
     
     console.log(`Initialized ${bouncingFields.length} bouncing fields in organic distribution`);
 }
-
-
 
 function gotPoses(results) {
     poses = results;
@@ -289,12 +254,115 @@ function windowResized() {
 function draw() {
     background(240, 240, 250);
     
-    if (viewMode === 'gallery') {
-        drawGalleryWall();
+    // Check if person is detected
+    let personDetected = poses.length > 0 && poses[0].keypoints.some(kp => kp.confidence > 0.3);
+    
+    if (personDetected) {
+        lastPersonDetectedTime = millis();
+        isIdleState = false;
+    } else if (millis() - lastPersonDetectedTime > idleTimeout) {
+        isIdleState = true;
+    }
+    
+    if (isIdleState) {
+        drawIdleScreen();
     } else {
-        // Default to administrative view
         drawAdministrativeSide();
     }
+}
+
+function drawIdleScreen() {
+
+    
+    // Update queue number periodically (every 8-12 seconds)
+    if (millis() - lastQueueUpdate > random(8000, 12000)) {
+        currentQueueNumber += floor(random(1, 4));
+        lastQueueUpdate = millis();
+    }
+    
+    // Responsive sizing based on screen dimensions
+    let isPortrait = height > width;
+    let baseSize = min(width, height);
+    
+    // Responsive text sizes
+    let queueTextSize = baseSize * 0.04;
+    let mainTextSize = baseSize * 0.08;
+    let instructionTextSize = baseSize * 0.035;
+    let footerTextSize = baseSize * 0.025;
+    
+    // Responsive positioning
+    let topSpacing = height * 0.15;
+    let centerY = height * 0.42;
+    let bottomSpacing = height * 0.5;
+    
+    // Queue number (H3 equivalent)
+    fill(102, 102, 102);
+    textAlign(CENTER, CENTER);
+    textSize(queueTextSize);
+textFont('Helvetica');
+    text(`NOW SERVING: APPLICANT #${currentQueueNumber.toString().padStart(3, '0')}`, 
+         width/2, topSpacing);
+    
+    // Main instruction (H1 equivalent) - handle text wrapping for narrow screens
+    fill(26, 26, 26);
+    textSize(mainTextSize);
+    textStyle(BOLD);
+    
+    if (isPortrait && width < height * 0.7) {
+        // Split text for very narrow portraits
+        text("PLEASE STEP HERE", width/2, centerY - mainTextSize * 1.2);
+        text("FOR ID PHOTO", width/2, centerY - mainTextSize * 0.3);
+    } else {
+        text("PLEASE STEP HERE FOR ID PHOTO", width/2, centerY - baseSize * 0.12);
+    }
+    
+    // Crosshair/viewfinder
+    drawCrosshair();
+    
+    // Instructions (H3 equivalent)
+    fill(68, 68, 68);
+    textSize(instructionTextSize);
+    textStyle(NORMAL);
+    
+    let instructionY1 = centerY + baseSize * 0.6;
+    let instructionY2 = centerY + baseSize * 0.66;
+    
+    text("STAND ON DESIGNATED AREA", width/2, instructionY1);
+    
+    // Blinking indicator for camera instruction
+    let blinkOn = (millis() % 1500) < 750; // Blink every 1.5 seconds
+    let cameraText = "LOOK DIRECTLY INTO CAMERA";
+    text(cameraText, width/2 - instructionTextSize * 0.4, instructionY2);
+    
+    if (blinkOn) {
+        fill(255, 68, 68);
+        let dotSize = instructionTextSize * 0.4;
+        ellipse(width/2 + textWidth(cameraText)/2, instructionY2, dotSize, dotSize);
+    }
+    
+}
+
+function drawCrosshair() {
+    if (!crosshairImg) return; // Safety check
+    
+    push();
+    translate(width/2, height/2 + height * 0.05);
+    
+    // Responsive sizing
+    let baseSize = min(width, height);
+    let crosshairSize = baseSize * 0.25; // 25% of smaller dimension
+    
+    // Pulsing animation
+    crosshairPulse += 0.02;
+    let pulseScale = 1 + sin(crosshairPulse) * 0.05;
+    scale(pulseScale);
+    
+    // Draw crosshair image centered
+    imageMode(CENTER);
+    image(crosshairImg, 0, 0, crosshairSize, crosshairSize);
+    imageMode(CORNER); // Reset to default
+    
+    pop();
 }
 
 function drawAdministrativeSide() {
@@ -347,20 +415,14 @@ function drawBouncingFields() {
         let fieldImg = fieldImages[field.filename];
         if (!fieldImg) continue;
         
-        // 🚨🚨🚨 TEMPORARY SCALING FOR DEVELOPMENT - REMOVE FOR 40" MONITOR! 🚨🚨🚨
-        let devScale = 0.6;
-        let scaledWidth = fieldImg.width * devScale;
-        let scaledHeight = fieldImg.height * devScale;
-        // 🚨🚨🚨 REMOVE THIS SCALING WHEN INSTALLING ON LARGE DISPLAY! 🚨🚨🚨
-        
         // Bounce off body boundaries (DVD screensaver style)
-        if (field.x <= bodyBounds.minX || field.x + scaledWidth >= bodyBounds.maxX) {
+        if (field.x <= bodyBounds.minX || field.x + fieldImg.width >= bodyBounds.maxX) {
             field.vx *= -1;
-            field.x = constrain(field.x, bodyBounds.minX, bodyBounds.maxX - scaledWidth);
+            field.x = constrain(field.x, bodyBounds.minX, bodyBounds.maxX - fieldImg.width);
         }
-        if (field.y <= bodyBounds.minY || field.y + scaledHeight >= bodyBounds.maxY) {
+        if (field.y <= bodyBounds.minY || field.y + fieldImg.height >= bodyBounds.maxY) {
             field.vy *= -1;
-            field.y = constrain(field.y, bodyBounds.minY, bodyBounds.maxY - scaledHeight);
+            field.y = constrain(field.y, bodyBounds.minY, bodyBounds.maxY - fieldImg.height);
         }
         
         // Ensure minimum speed (prevent getting stuck)
@@ -371,23 +433,19 @@ function drawBouncingFields() {
         field.vx = constrain(field.vx, -field.maxSpeed, field.maxSpeed);
         field.vy = constrain(field.vy, -field.maxSpeed, field.maxSpeed);
         
-        // Draw the field ONLY if it's not the top field
+        // Draw the field ONLY if it's not the top field (no scaling)
         if (field.filename !== topBodyField) {
-            image(fieldImg, field.x, field.y, scaledWidth, scaledHeight);
+            image(fieldImg, field.x, field.y);
         }
     }
     
-        // SECOND PASS: Draw the top field last (so it appears on top)
+    // SECOND PASS: Draw the top field last (so it appears on top)
     for (let field of bouncingFields) {
         if (field.filename === topBodyField) {
             let fieldImg = fieldImages[field.filename];
             if (fieldImg) {
-                // Make the top field slightly larger for emphasis
-                let devScale = 0.6;
-                let topScale = devScale * 1.1; // 10% larger
-                let topWidth = fieldImg.width * topScale;
-                let topHeight = fieldImg.height * topScale;
-                image(fieldImg, field.x, field.y, topWidth, topHeight);
+                // Draw top field at original size (no scaling for consistency)
+                image(fieldImg, field.x, field.y);
             }
             break; // Only draw the first match
         }
@@ -490,31 +548,19 @@ function drawSingleFaceField(face, layer, landmarkName, imageFilename, isTopFiel
         offsetY = offsetY - 80;
     }
     
-    // Get field image dimensions with scaling
+    // Get field image at native size (no scaling!)
     let fieldImg = fieldImages[imageFilename];
     
-    // 🚨🚨🚨 TEMPORARY SCALING FOR DEVELOPMENT - REMOVE FOR 40" MONITOR! 🚨🚨🚨
-    let devScale = 0.6;
-    let scaledWidth = fieldImg.width * devScale;
-    let scaledHeight = fieldImg.height * devScale;
-    
-    // Optional: Make the top field slightly larger or add a subtle effect
-    if (isTopField) {
-        scaledWidth *= 1.05;
-        scaledHeight *= 1.05;
-    }
-    // 🚨🚨🚨 REMOVE THIS SCALING WHEN INSTALLING ON LARGE DISPLAY! 🚨🚨🚨
-    
     // Center the field on the landmark
-    offsetX = offsetX - (scaledWidth / 2) + layerOffsetX;
-    offsetY = offsetY - (scaledHeight / 2) + layerOffsetY;
+    offsetX = offsetX - (fieldImg.width / 2) + layerOffsetX;
+    offsetY = offsetY - (fieldImg.height / 2) + layerOffsetY;
     
     // Ensure fields stay within canvas bounds
-    offsetX = constrain(offsetX, 0, windowWidth - scaledWidth);
-    offsetY = constrain(offsetY, 0, windowHeight - scaledHeight);
+    offsetX = constrain(offsetX, 0, windowWidth - fieldImg.width);
+    offsetY = constrain(offsetY, 0, windowHeight - fieldImg.height);
     
-    // Draw the form field image
-    image(fieldImg, offsetX, offsetY, scaledWidth, scaledHeight);
+    // Draw the form field image at native size
+    image(fieldImg, offsetX, offsetY);
 }
 
 function drawSkeleton() {
@@ -556,163 +602,7 @@ function drawSkeleton() {
     }
 }
 
-function drawGalleryWall() {
-    // Dark background
-    background(20, 20, 30);
-    
-    if (galleryPhotos.length === 0) {
-        // Show placeholder text
-        fill(255, 255, 255, 100);
-        textAlign(CENTER, CENTER);
-        textSize(15);
-        text("Gallery Wall\nPhotos will appear here as they're captured", 
-             windowWidth/2, windowHeight/2);
-        return;
-    }
-    
-    // Calculate grid layout
-    let cols = Math.ceil(Math.sqrt(galleryPhotos.length));
-    let rows = Math.ceil(galleryPhotos.length / cols);
-    
-    // Calculate photo dimensions with padding
-    let padding = 20;
-    let availableWidth = windowWidth - (padding * (cols + 1));
-    let availableHeight = windowHeight - (padding * (rows + 1));
-    let photoWidth = availableWidth / cols;
-    let photoHeight = availableHeight / rows;
-    
-    // Keep aspect ratio by using the smaller dimension
-    let photoSize = Math.min(photoWidth, photoHeight);
-    
-    // Center the grid
-    let startX = (windowWidth - (cols * photoSize + (cols - 1) * padding)) / 2;
-    let startY = (windowHeight - (rows * photoSize + (rows - 1) * padding)) / 2;
-    
-    // Draw photos in grid
-    for (let i = 0; i < galleryPhotos.length; i++) {
-        let col = i % cols;
-        let row = Math.floor(i / cols);
-        
-        let x = startX + col * (photoSize + padding);
-        let y = startY + row * (photoSize + padding);
-        
-        // Draw photo exactly as captured
-        let photo = galleryPhotos[i];
-        if (photo.img) {
-            image(photo.img, x, y, photoSize, photoSize);
-        }
-        
-        // Optional: Add a subtle border
-        noFill();
-        stroke(255, 255, 255, 50);
-        strokeWeight(1);
-        rect(x, y, photoSize, photoSize);
-    }
-}
-
-function capturePhoto() {
-    // Only capture if we're not in gallery mode
-    if (viewMode === 'gallery') {
-        console.log('Photo capture not available in gallery view');
-        return;
-    }
-    
-    // Capture the entire current canvas
-    let photoData = canvas.toDataURL('image/jpeg', 0.8);
-    
-    // Create photo object with metadata
-    let photoObj = {
-        data: photoData,
-        timestamp: Date.now(),
-        id: 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
-    };
-    
-    // Save to localStorage
-    savePhotoToStorage(photoObj);
-    
-    console.log('Photo captured and saved to gallery');
-}
-
-function savePhotoToStorage(photoObj) {
-    // Get existing photos from localStorage
-    let existingPhotos = JSON.parse(localStorage.getItem('galleryPhotos') || '[]');
-    
-    // Add new photo
-    existingPhotos.push(photoObj);
-    
-    // Keep only the most recent photos to prevent memory issues
-    if (existingPhotos.length > maxGalleryPhotos) {
-        existingPhotos = existingPhotos.slice(-maxGalleryPhotos);
-    }
-    
-    // Save back to localStorage
-    localStorage.setItem('galleryPhotos', JSON.stringify(existingPhotos));
-}
-
-function loadGalleryPhotos() {
-    // Get photos from localStorage
-    let storedPhotos = JSON.parse(localStorage.getItem('galleryPhotos') || '[]');
-    
-    // Convert base64 strings back to images
-    galleryPhotos = [];
-    for (let photoData of storedPhotos) {
-        let img = createImg(photoData.data);
-        img.hide(); // Don't show in DOM
-        
-        galleryPhotos.push({
-            img: img,
-            timestamp: photoData.timestamp,
-            id: photoData.id
-        });
-    }
-    
-    // Sort by timestamp (newest first)
-    galleryPhotos.sort((a, b) => b.timestamp - a.timestamp);
-}
-
-function clearGallery() {
-    // Clear localStorage
-    localStorage.removeItem('galleryPhotos');
-    galleryPhotos = [];
-    console.log('Gallery cleared');
-}
-
-function cleanup() {
-    console.log('Running cleanup...');
-    
-    // Clean up gallery photos (keep only recent ones)
-    if (galleryPhotos.length > maxGalleryPhotos) {
-        // Remove oldest photos, keep newest
-        let photosToRemove = galleryPhotos.splice(0, galleryPhotos.length - maxGalleryPhotos);
-        console.log(`Cleaned up ${photosToRemove.length} old gallery photos`);
-    }
-    
-    // Clean up localStorage if it's getting too big
-    try {
-        let storedPhotos = JSON.parse(localStorage.getItem('galleryPhotos') || '[]');
-        if (storedPhotos.length > maxGalleryPhotos) {
-            storedPhotos = storedPhotos.slice(-maxGalleryPhotos);
-            localStorage.setItem('galleryPhotos', JSON.stringify(storedPhotos));
-            console.log('Cleaned up localStorage');
-        }
-    } catch (e) {
-        console.log('Error cleaning localStorage:', e);
-    }
-    
-    // Force garbage collection hint (doesn't guarantee it, but suggests it)
-    if (window.gc) {
-        window.gc();
-    }
-}
-
 function keyPressed() {
-    if (key === ' ') {
-        console.log('Photo captured');
-        capturePhoto();
-    }
-    if (key === 'c' || key === 'C') {
-        clearGallery();
-    }
     if (key === 's' || key === 'S') {
         // Toggle skeleton drawing for debugging
         showSkeleton = !showSkeleton;
