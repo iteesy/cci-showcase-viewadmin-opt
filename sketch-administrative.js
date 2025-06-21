@@ -72,10 +72,19 @@ let faceLandmarkMap = {
     "lip_bottom": 18
 };
 
-//BODY FIELDS - Using body keypoints for positioning
-let allBodyFieldsFlat = [];
+// BALANCED BODY FIELD CYCLING VARIABLES
+let activeBodyFields = []; 
+let maxVisibleBodyFields = 10; //body fields showing
+let bodyFieldRotationTimer = 0;
+let bodyFieldRotationSpeed = 8000; // used to be 12000
+let fieldTransitionDuration = 4000; // used to be 2000 
+let fadeInStartDelay = 1000;
+let isTransitioning = false;
+let transitionStartTime = 0;
+
+// Z-LAYERING VARIABLES (bringing back the top field cycling)
 let bodyFieldCycleTimer = 0;
-let bodyFieldCycleSpeed = 1500; // INCREASED from 1000 for performance
+let bodyFieldCycleSpeed = 1500; // Top field changes every 1.5 seconds
 let currentTopBodyFieldIndex = 0;
 
 // REDUCED BOUNCING FIELDS - Cut in half for performance
@@ -102,7 +111,6 @@ let bouncingFieldImages = [
     "family_spouse_citizenship_med.png",
     "legal_employer_med.png",
     "travel_cntry_med.png",
-    "identity_anum_med.png",
     
     // Reduced questions (only first 8 instead of 17)
     "questions_1_radio.png",
@@ -112,7 +120,16 @@ let bouncingFieldImages = [
     "questions_5_radio.png",
     "questions_6_radio.png",
     "questions_7_radio.png",
-    "questions_8_radio.png"
+    "questions_8_radio.png",
+    "questions_9_radio.png",
+    "questions_10_radio.png",
+    "questions_11_radio.png",
+    "questions_12_radio.png",
+    "questions_13_radio.png",
+    "questions_14_radio.png",
+    "questions_15_radio.png",
+    "questions_16_radio.png",
+    "questions_17_radio.png"
 ];
 
 // Bouncing field objects
@@ -162,7 +179,7 @@ function loadFormFieldImages() {
 
 function setup() {
     createCanvas(windowWidth, windowHeight);
-    //frameRate(45); // REDUCED from default 60fps
+    frameRate(45); // REDUCED from default 60fps
     
     // Initialize webcam
     capture = createCapture(VIDEO);
@@ -176,7 +193,6 @@ function setup() {
     // Initialize bouncing fields and field cycling
     initializeBouncingFields();
     initializeFieldCycling();
-    initializeBodyFieldCycling();
 }
 
 function initializeFieldCycling() {
@@ -199,14 +215,10 @@ function initializeFieldCycling() {
     console.log(`Initialized field cycling with ${allFaceFieldsFlat.length} individual fields`);
 }
 
-function initializeBodyFieldCycling() {
-    allBodyFieldsFlat = [...bouncingFieldImages];
-    console.log(`Initialized body field cycling with ${allBodyFieldsFlat.length} fields`);
-}
-
 function initializeBouncingFields() {
     bouncingFields = [];
     
+    // Create ALL field objects but don't make them all active
     for (let i = 0; i < bouncingFieldImages.length; i++) {
         let filename = bouncingFieldImages[i];
         bouncingFields.push({
@@ -216,11 +228,224 @@ function initializeBouncingFields() {
             vx: random(-1.5, 1.5), // REDUCED speed for performance
             vy: random(-1.5, 1.5),
             minSpeed: 0.3, // REDUCED minimum speed
-            maxSpeed: 1.5  // REDUCED maximum speed
+            maxSpeed: 1.5,  // REDUCED maximum speed
+            isActive: false, // New property to track visibility
+            fadeState: 'hidden', // 'hidden', 'fadingIn', 'visible', 'fadingOut'
+            alpha: 0 // For fade transitions
         });
     }
     
-    console.log(`Initialized ${bouncingFields.length} bouncing fields in organic distribution`);
+    // Initialize the first batch of active fields
+    updateActiveBodyFields();
+    
+    // Set initial fields to visible state
+    setTimeout(() => {
+        activeBodyFields.forEach(field => {
+            field.fadeState = 'visible';
+            field.alpha = 255;
+        });
+        isTransitioning = false;
+    }, fieldTransitionDuration);
+    
+    console.log(`Initialized ${bouncingFields.length} total fields, ${activeBodyFields.length} active`);
+}
+
+function updateActiveBodyFields() {
+    // Start transition
+    isTransitioning = true;
+    transitionStartTime = millis();
+    
+    // Mark currently active fields to fade out
+    activeBodyFields.forEach(field => {
+        field.fadeState = 'fadingOut';
+        field.fadeStartTime = millis();
+    });
+    
+    // Categorize fields by type to ensure balanced representation
+    let fieldCategories = {
+        family: [],
+        work: [],
+        contact: [],
+        travel: [],
+        identity: [],
+        questions: []
+    };
+    
+    // Categorize existing fields based on filename
+    bouncingFields.forEach((field, index) => {
+        if (field.filename.includes('family_')) {
+            fieldCategories.family.push(index);
+        } else if (field.filename.includes('work_') || field.filename.includes('legal_employer')) {
+            fieldCategories.work.push(index);
+        } else if (field.filename.includes('contact_')) {
+            fieldCategories.contact.push(index);
+        } else if (field.filename.includes('travel_')) {
+            fieldCategories.travel.push(index);
+        } else if (field.filename.includes('identity_')) {
+            fieldCategories.identity.push(index);
+        } else if (field.filename.includes('questions_')) {
+            fieldCategories.questions.push(index);
+        }
+    });
+    
+    // IMPROVED: Dynamic field distribution that ALWAYS reaches maxVisibleBodyFields
+    let newActiveFields = [];
+    let targetFieldCount = maxVisibleBodyFields; // Use the variable!
+    
+    // Define minimum representation per category (to maintain balance)
+    let minFieldsPerCategory = {
+        family: 1,     // At least 1 family field
+        work: 1,       // At least 1 work field  
+        contact: 1,    // At least 1 contact field
+        travel: 1,     // At least 1 travel field
+        identity: 1,   // At least 1 identity field
+        questions: 1   // At least 1 question field
+    };
+    
+    // STEP 1: Add minimum required fields from each category
+    for (let category in minFieldsPerCategory) {
+        let minCount = minFieldsPerCategory[category];
+        let availableInCategory = fieldCategories[category];
+        
+        for (let i = 0; i < minCount && availableInCategory.length > 0 && newActiveFields.length < targetFieldCount; i++) {
+            let randomIndex = floor(random(availableInCategory.length));
+            let fieldIndex = availableInCategory[randomIndex];
+            let field = bouncingFields[fieldIndex];
+            
+            if (field.fadeState === 'hidden') {
+                setupNewActiveField(field);
+                newActiveFields.push(field);
+            }
+            
+            // Remove so we don't pick the same field twice
+            availableInCategory.splice(randomIndex, 1);
+        }
+    }
+    
+    // STEP 2: Fill remaining slots randomly from all categories
+    let allRemainingFields = [];
+    for (let category in fieldCategories) {
+        allRemainingFields = allRemainingFields.concat(fieldCategories[category]);
+    }
+    
+    // Shuffle for random distribution
+    allRemainingFields = shuffleArray(allRemainingFields);
+    
+    // Add more fields until we reach target count
+    for (let fieldIndex of allRemainingFields) {
+        if (newActiveFields.length >= targetFieldCount) break;
+        
+        let field = bouncingFields[fieldIndex];
+        if (field.fadeState === 'hidden') {
+            setupNewActiveField(field);
+            newActiveFields.push(field);
+        }
+    }
+    
+    console.log(`Starting transition with EARLY OVERLAP: ${newActiveFields.length}/${targetFieldCount} new fields will fade in after ${fadeInStartDelay}ms`);
+    
+    // Debug: Show category breakdown
+    let categoryCount = {};
+    newActiveFields.forEach(field => {
+        for (let category in fieldCategories) {
+            if (fieldCategories[category].includes(bouncingFields.indexOf(field))) {
+                categoryCount[category] = (categoryCount[category] || 0) + 1;
+            }
+        }
+    });
+    console.log('Field distribution:', categoryCount);
+}
+
+function setupNewActiveField(field) {
+    field.isActive = true;
+    field.fadeState = 'waitingToFadeIn';
+    field.alpha = 0;
+    field.fadeInStartTime = millis() + fadeInStartDelay;
+    
+    // RANDOMIZE starting position and velocity for more organic movement
+    field.x = random(windowWidth * 0.1, windowWidth * 0.9);
+    field.y = random(windowHeight * 0.2, windowHeight * 0.8);
+    field.vx = random(-1.5, 1.5);
+    field.vy = random(-1.5, 1.5);
+}
+
+// Helper function to shuffle an array
+function shuffleArray(array) {
+    let shuffled = [...array]; // Make a copy
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
+function updateFieldFades() {
+    let currentTime = millis();
+    let anyFieldsTransitioning = false;
+    
+    // Update alpha values for all fields with individual timing
+    bouncingFields.forEach(field => {
+        if (field.fadeState === 'waitingToFadeIn') {
+            // Check if it's time to start fading in
+            if (currentTime >= field.fadeInStartTime) {
+                field.fadeState = 'fadingIn';
+                field.fadeStartTime = currentTime;
+                console.log(`Field ${field.filename} starting to fade in (early overlap)`);
+            }
+            anyFieldsTransitioning = true;
+            
+        } else if (field.fadeState === 'fadingIn') {
+            let fadeProgress = (currentTime - field.fadeStartTime) / fieldTransitionDuration;
+            fadeProgress = constrain(fadeProgress, 0, 1);
+            
+            // Smooth easing curve for fade in (ease-out)
+            let easedProgress = 1 - Math.pow(1 - fadeProgress, 3);
+            field.alpha = easedProgress * 255;
+            
+            if (fadeProgress >= 1) {
+                field.fadeState = 'visible';
+                field.alpha = 255;
+                console.log(`Field ${field.filename} fully faded in`);
+            } else {
+                anyFieldsTransitioning = true;
+            }
+            
+        } else if (field.fadeState === 'fadingOut') {
+            let fadeProgress = (currentTime - field.fadeStartTime) / fieldTransitionDuration;
+            fadeProgress = constrain(fadeProgress, 0, 1);
+            
+            // Smooth easing curve for fade out (ease-in)
+            let easedProgress = Math.pow(fadeProgress, 2);
+            field.alpha = (1 - easedProgress) * 255;
+            
+            if (fadeProgress >= 1) {
+                field.fadeState = 'hidden';
+                field.alpha = 0;
+                field.isActive = false;
+                console.log(`Field ${field.filename} fully faded out`);
+            } else {
+                anyFieldsTransitioning = true;
+            }
+            
+        } else if (field.fadeState === 'visible') {
+            field.alpha = 255;
+        }
+    });
+    
+    // Update activeBodyFields array to include all visible and transitioning fields
+    activeBodyFields = bouncingFields.filter(field => 
+        field.fadeState === 'visible' || 
+        field.fadeState === 'fadingIn' || 
+        field.fadeState === 'fadingOut' ||
+        field.fadeState === 'waitingToFadeIn'
+    );
+    
+    // End transition when no fields are transitioning
+    if (isTransitioning && !anyFieldsTransitioning) {
+        isTransitioning = false;
+        let visibleCount = activeBodyFields.filter(f => f.fadeState === 'visible').length;
+        console.log(`Smooth transition complete! ${visibleCount} fields now visible`);
+    }
 }
 
 // PERFORMANCE OPTIMIZATION: Limit detection frequency
@@ -355,9 +580,7 @@ function drawAdministrativeSide() {
     // Draw webcam feed
     if (capture.loadedmetadata) {
         image(capture, 0, 0, windowWidth, windowHeight);
-        
-        // REDUCED blur for performance
-        filter(BLUR, 4); // REDUCED from 8
+        //filter(BLUR, 4); // REDUCED from 8
         
         noTint();
     }
@@ -376,63 +599,92 @@ function drawAdministrativeSide() {
 function drawBouncingFields() {
     if (poses.length === 0) return;
 
-    // SLOWER body field cycling for performance
-    if (millis() - bodyFieldCycleTimer > bodyFieldCycleSpeed) {
-        currentTopBodyFieldIndex = Math.floor(random(allBodyFieldsFlat.length));
+    // Rotate visible fields periodically 
+    if (!isTransitioning && millis() - bodyFieldRotationTimer > bodyFieldRotationSpeed) {
+        updateActiveBodyFields();
+        bodyFieldRotationTimer = millis();
+    }
+    
+    // Update fade transitions with smooth overlapping
+    updateFieldFades();
+
+    // Z-LAYERING: Cycle which field appears on top
+    let fullyVisibleFields = activeBodyFields.filter(f => f.fadeState === 'visible');
+    if (fullyVisibleFields.length > 0 && millis() - bodyFieldCycleTimer > bodyFieldCycleSpeed) {
+        currentTopBodyFieldIndex = floor(random(fullyVisibleFields.length));
         bodyFieldCycleTimer = millis();
-        console.log(`Body field cycle: ${allBodyFieldsFlat[currentTopBodyFieldIndex]} now on top`);
+        console.log(`Body field cycle: ${fullyVisibleFields[currentTopBodyFieldIndex].filename} now on top`);
     }
 
-    let topBodyField = allBodyFieldsFlat[currentTopBodyFieldIndex];
     let pose = poses[0];
     let bodyBounds = getBodyBounds(pose);
     if (!bodyBounds) return;
     
-    // Update and draw bouncing fields
-    for (let field of bouncingFields) {
-        // Update position
-        field.x += field.vx;
-        field.y += field.vy;
+    // Draw all active fields EXCEPT the top field
+    for (let i = 0; i < activeBodyFields.length; i++) {
+        let field = activeBodyFields[i];
         
-        let fieldImg = fieldImages[field.filename];
-        if (!fieldImg) continue;
-        
-        // Bounce off boundaries
-        if (field.x <= bodyBounds.minX || field.x + fieldImg.width >= bodyBounds.maxX) {
-            field.vx *= -1;
-            field.x = constrain(field.x, bodyBounds.minX, bodyBounds.maxX - fieldImg.width);
-        }
-        if (field.y <= bodyBounds.minY || field.y + fieldImg.height >= bodyBounds.maxY) {
-            field.vy *= -1;
-            field.y = constrain(field.y, bodyBounds.minY, bodyBounds.maxY - fieldImg.height);
+        // Skip the top field - we'll draw it last
+        if (field.fadeState === 'visible' && fullyVisibleFields[currentTopBodyFieldIndex] === field) {
+            continue;
         }
         
-        // Maintain speed
-        if (abs(field.vx) < field.minSpeed) field.vx = field.vx > 0 ? field.minSpeed : -field.minSpeed;
-        if (abs(field.vy) < field.minSpeed) field.vy = field.vy > 0 ? field.minSpeed : -field.minSpeed;
-        field.vx = constrain(field.vx, -field.maxSpeed, field.maxSpeed);
-        field.vy = constrain(field.vy, -field.maxSpeed, field.maxSpeed);
-        
-        // Draw field (top field drawn last for layering)
-        if (field.filename !== topBodyField) {
-            image(fieldImg, field.x, field.y);
-        }
+        updateAndDrawField(field, bodyBounds);
     }
     
-    // Draw top field last
-    for (let field of bouncingFields) {
-        if (field.filename === topBodyField) {
-            let fieldImg = fieldImages[field.filename];
-            if (fieldImg) {
-                image(fieldImg, field.x, field.y);
-            }
-            break;
-        }
+    // Draw the top field last (so it appears on top)
+    if (fullyVisibleFields.length > 0 && fullyVisibleFields[currentTopBodyFieldIndex]) {
+        updateAndDrawField(fullyVisibleFields[currentTopBodyFieldIndex], bodyBounds);
     }
 }
 
+// Helper function to update and draw a single field
+function updateAndDrawField(field, bodyBounds) {
+    // Update position
+    field.x += field.vx;
+    field.y += field.vy;
+    
+    let fieldImg = fieldImages[field.filename];
+    if (!fieldImg) return;
+    
+    // Bounce off boundaries
+    if (field.x <= bodyBounds.minX || field.x + fieldImg.width >= bodyBounds.maxX) {
+        field.vx *= -1;
+        field.x = constrain(field.x, bodyBounds.minX, bodyBounds.maxX - fieldImg.width);
+    }
+    if (field.y <= bodyBounds.minY || field.y + fieldImg.height >= bodyBounds.maxY) {
+        field.vy *= -1;
+        field.y = constrain(field.y, bodyBounds.minY, bodyBounds.maxY - fieldImg.height);
+    }
+    
+    // Maintain speed
+    if (abs(field.vx) < field.minSpeed) field.vx = field.vx > 0 ? field.minSpeed : -field.minSpeed;
+    if (abs(field.vy) < field.minSpeed) field.vy = field.vy > 0 ? field.minSpeed : -field.minSpeed;
+    field.vx = constrain(field.vx, -field.maxSpeed, field.maxSpeed);
+    field.vy = constrain(field.vy, -field.maxSpeed, field.maxSpeed);
+    
+    // Draw the field with fade effect
+    push();
+    tint(255, field.alpha);
+    image(fieldImg, field.x, field.y);
+    pop();
+}
+
 function getBodyBounds(pose) {
-    let validKeypoints = pose.keypoints.filter(kp => kp.confidence > 0.3);
+    // Exclude head and neck keypoints for body bounds
+    let bodyKeypointNames = [
+        'left_shoulder', 'right_shoulder',
+        'left_elbow', 'right_elbow', 
+        'left_wrist', 'right_wrist',
+        'left_hip', 'right_hip',
+        'left_knee', 'right_knee',
+        'left_ankle', 'right_ankle'
+    ];
+    
+    let validKeypoints = pose.keypoints.filter(kp => 
+        kp.confidence > 0.3 && bodyKeypointNames.includes(kp.name)
+    );
+
     if (validKeypoints.length === 0) return null;
     
     let scaledKeypoints = validKeypoints.map(kp => ({
