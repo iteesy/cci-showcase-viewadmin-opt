@@ -515,7 +515,7 @@ function drawIdleScreen() {
     fill(102, 102, 102);
     textAlign(CENTER, CENTER);
     textSize(queueTextSize);
-    textFont('Helvetica');
+    textFont('Kepler');
     text(`NOW SERVING: APPLICANT #${currentQueueNumber.toString().padStart(3, '0')}`, 
          width/2, topSpacing);
     
@@ -580,7 +580,7 @@ function drawAdministrativeSide() {
     // Draw webcam feed
     if (capture.loadedmetadata) {
         image(capture, 0, 0, windowWidth, windowHeight);
-        //filter(BLUR, 4); // REDUCED from 8
+        filter(BLUR, 4); // REDUCED from 8
         
         noTint();
     }
